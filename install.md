@@ -65,6 +65,17 @@ Chrome setup step; it is not exposed to the harness until CDP is available.
 The helper requires Accessibility permission for the app launching the CLI
 (for example Terminal, iTerm, Codex, or an IDE) in System Settings.
 
+### Profile filesystem permissions
+
+`profile-access-denied` means the OS denied reading `DevToolsActivePort`.
+Check filesystem/privacy access for the terminal or host application. This is
+separate from Chrome's remote-debugging checkbox and per-connection Allow sheet;
+repeating those steps does not resolve a filesystem denial.
+
+Discovery still tries other readable profiles and available HTTP endpoints.
+For an endpoint explicitly supplied by the user or operator, `BU_CDP_WS` skips
+profile-file discovery. It does not bypass Chrome's connection approval.
+
 ## Cloud Browsers
 
 Cloud is optional. Local Chrome does not need a Browser Use API key.
@@ -95,6 +106,7 @@ browser-harness --doctor
 Use the output:
 
 - `chrome running` FAIL: ask the user to open Chrome, or use isolated/cloud browser.
+- `chrome running` UNKNOWN: process inspection failed; this is not evidence that Chrome is closed. Check host permissions or a known CDP endpoint before asking the user to relaunch Chrome.
 - `daemon alive` FAIL: Chrome remote debugging permission is missing, Chrome is closed, or the CDP endpoint is not reachable.
 - update available: run `browser-harness --update -y` when you decide to upgrade.
 

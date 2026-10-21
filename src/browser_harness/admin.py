@@ -1213,7 +1213,7 @@ def _chrome_running():
             names = ("Google Chrome", "chrome", "chromium", "Microsoft Edge", "msedge", "helium")
         return any(n.lower() in out.lower() for n in names)
     except Exception:
-        return False
+        return None
 
 
 _BROWSER_LAUNCH = (
@@ -1422,7 +1422,7 @@ def run_doctor():
     doc_url = _snap_linux_headless_doc_url()
 
     def row(label, ok, detail=""):
-        mark = "ok  " if ok else "FAIL"
+        mark = "UNKNOWN" if ok is None else ("ok  " if ok else "FAIL")
         print(f"  [{mark}] {label}{(' — ' + detail) if detail else ''}")
 
     print("browser-harness doctor")
@@ -1440,7 +1440,8 @@ def run_doctor():
             print(f"Browser: {bname} (snap) — WARNING: Snap confinement prevents CDP binding.")
             print(f"  Fix: Install Chrome natively (see docs/snap-linux-headless.md)")
             print(f"  Docs: {doc_url}")
-    row("chrome running", chrome, "" if chrome else "start chrome/edge")
+    detail = "process inspection unavailable; browser state is unknown" if chrome is None else ("" if chrome else "start chrome/edge")
+    row("chrome running", chrome, detail)
     row("daemon alive", daemon, "" if daemon else "see install.md")
     row("active browser connections", bool(connections), str(len(connections)))
     for conn in connections:
@@ -1467,7 +1468,7 @@ def run_doctor_json(require_existing_daemon=False):
     chrome = None if strict else _chrome_running()
     browser_ready = daemon_browser_ready(NAME)
     daemon = browser_ready or daemon_alive(NAME)
-    healthy = (daemon and browser_ready) if strict else (browser_ready or (chrome and daemon))
+    healthy = bool((daemon and browser_ready) if strict else (browser_ready or (chrome and daemon)))
     report = {
         "schema_version": 1,
         "healthy": healthy,

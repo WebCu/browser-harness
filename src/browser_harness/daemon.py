@@ -240,6 +240,15 @@ async def _silent(coro):
         pass
 
 
+def _profile_access_error():
+    return RuntimeError(
+        "profile-access-denied: the OS denied access to DevToolsActivePort. "
+        "Check filesystem/privacy permissions for the terminal or host application; "
+        "this does not establish that remote debugging is disabled. "
+        "Alternatively, use BU_CDP_WS with a user-authorized WebSocket endpoint."
+    )
+
+
 def _ws_from_devtools_active_port(http_url: str) -> str | None:
     """When /json/version returns 404 (Chrome 147+ default profile), match DevToolsActivePort by port."""
     p = urlparse(http_url)
@@ -249,15 +258,21 @@ def _ws_from_devtools_active_port(http_url: str) -> str | None:
     host = p.hostname or "127.0.0.1"
     if ":" in host:  # urlparse strips IPv6 brackets; restore them for the ws:// URL
         host = f"[{host}]"
+    access_denied = False
     for base in PROFILES:
         try:
             active = (base / "DevToolsActivePort").read_text(encoding="utf-8", errors="replace").splitlines()
+        except PermissionError:
+            access_denied = True
+            continue
         except (FileNotFoundError, NotADirectoryError):
             continue
         port = active[0].strip() if active else ""
         ws_path = active[1].strip() if len(active) > 1 else ""
         if port == want_port and ws_path:
             return f"ws://{host}:{port}{ws_path}"
+    if access_denied:
+        raise _profile_access_error()
     return None
 
 
@@ -290,10 +305,14 @@ def get_ws_url():
         raise RuntimeError(f"BU_CDP_URL={url} unreachable after 30s: {last_err} -- {hint}")
     deadline = time.time() + 30
     next_liveness_check = 0.0
+    access_denied = False
     while time.time() < deadline:
         for base in PROFILES:
             try:
                 active = (base / "DevToolsActivePort").read_text(encoding="utf-8", errors="replace").splitlines()
+            except PermissionError:
+                access_denied = True
+                continue
             except (FileNotFoundError, NotADirectoryError):
                 continue
             port = active[0].strip() if active else ""
@@ -315,6 +334,8 @@ def get_ws_url():
                     return f"ws://127.0.0.1:{port}{ws_path}"
             except (OSError, KeyError, ValueError):
                 pass
+        if access_denied:
+            break
         # Closed browser leaves stale DevToolsActivePort files
         now = time.time()
         if now >= next_liveness_check:
@@ -337,6 +358,8 @@ def get_ws_url():
                 raise RuntimeError("permission-blocked: Chrome is reachable, but the per-session Allow remote debugging popup has not been accepted")
         except (OSError, KeyError, ValueError):
             continue
+    if access_denied:
+        raise _profile_access_error()
     if remote_debugging_user_enabled() is False:
         raise RuntimeError('remote debugging is turned off for this browser instance — enable chrome://inspect/#remote-debugging (tick "Allow remote debugging for this browser instance")')
     raise RuntimeError(f"DevToolsActivePort not found in {[str(p) for p in PROFILES]} — enable chrome://inspect/#remote-debugging, or set BU_CDP_WS for a remote browser")
